@@ -1,0 +1,151 @@
+import tkinter as tk
+from tkinter import filedialog
+import fitz  # PyMuPDF
+from PIL import Image, ImageTk
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+
+class PDFFile:
+    def __init__(self):
+        self.pdf_document = None
+        self.current_page = 0
+
+    def load_pdf(self, file_path):
+        try:
+            self.pdf_document = fitz.open(file_path)
+            self.current_page = 0
+            return True
+        except FileNotFoundError:
+            print("Файл не найден.")
+            return False
+        except Exception as e:
+            print(f"Ошибка при чтении файла: {e}")
+            return False
+
+    def close_pdf(self):
+        if self.pdf_document is not None:
+            self.pdf_document.close()
+
+class PDFViewerApp:
+    def __init__(self, root):
+        self.root = root
+        self.pdf_file = PDFFile()
+        self.image_reference = None
+        self.user_text = ""
+
+        self.canvas = tk.Canvas(root, bg='white', width=595, height=842)  # Размер страницы A4
+
+        self.btn_select_file = tk.Button(root, text="Выбрать файл", command=self.open_file)
+        self.btn_select_file.grid(row=0, column=0, padx=10, pady=10)
+
+        self.btn_prev_page = tk.Button(root, text="Предыдущая страница", command=self.show_prev_page)
+        self.btn_prev_page.grid(row=1, column=0, padx=10, pady=10)
+
+        self.btn_next_page = tk.Button(root, text="Следующая страница", command=self.show_next_page)
+        self.btn_next_page.grid(row=2, column=0, padx=10, pady=10)
+
+        self.btn_create_pdf = tk.Button(root, text="Создать PDF", command=self.create_new_pdf)
+        self.btn_create_pdf.grid(row=3, column=0, padx=10, pady=10)
+
+        self.entry_user_text = tk.Entry(root, width=30)
+        self.entry_user_text.grid(row=4, column=0, padx=10, pady=10)
+
+        self.btn_add_user_text = tk.Button(root, text="Добавить текст", command=self.add_user_text)
+        self.btn_add_user_text.grid(row=5, column=0, padx=10, pady=10)
+
+        self.canvas.grid(row=0, column=1, rowspan=6, padx=10, pady=10, sticky="nsew")
+
+    def open_file(self):
+        file_path = filedialog.askopenfilename(filetypes=[("PDF Files", "*.pdf")])
+        if file_path:
+            if self.pdf_file.load_pdf(file_path):
+                self.show_pdf()
+                print("PDF успешно загружен и отображен.")
+            else:
+                print("Не удалось загрузить PDF.")
+
+    def show_pdf(self):
+        if self.pdf_file.pdf_document is not None:
+            page = self.pdf_file.pdf_document.load_page(self.pdf_file.current_page)
+            zoom_factor = min(self.canvas.winfo_width() / page.rect.width, self.canvas.winfo_height() / page.rect.height)
+            image = page.get_pixmap(matrix=fitz.Matrix(zoom_factor, zoom_factor))
+            img = Image.frombytes("RGB", [image.width, image.height], image.samples)
+            self.image_reference = ImageTk.PhotoImage(image=img)
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.image_reference)
+            self.root.update()
+
+    def show_next_page(self):
+        if self.pdf_file.pdf_document is not None and self.pdf_file.current_page < self.pdf_file.pdf_document.page_count - 1:
+            self.pdf_file.current_page += 1
+            self.show_pdf()
+
+    def show_prev_page(self):
+        if self.pdf_file.pdf_document is not None and self.pdf_file.current_page > 0:
+            self.pdf_file.current_page -= 1
+            self.show_pdf()
+
+    def create_new_pdf(self):
+        # Создаем новый PDF-файл
+        output_file = "новый_файл.pdf"
+        c = canvas.Canvas(output_file, pagesize=A4)
+
+        # Добавляем фотографию на первую страницу
+        image_path = "C:/Users/Andrii Shurdukov/GItordner/Flunky/example.jpg"   # Укажите путь к своей картинке
+        c.drawImage(image_path, 100, 500, width=400, height=300)
+
+        # Добавляем линии на первую страницу
+        c.setStrokeColor(colors.red)
+        c.setLineWidth(2)
+        c.line(100, 400, 500, 400)
+        c.line(100, 450, 500, 450)
+        c.line(100, 400, 100, 450)
+        c.line(500, 400, 500, 450)
+
+        # Добавляем текст на первую страницу
+        c.setFont("Helvetica", 20)
+        c.setFillColor(colors.black)
+        text = "Note"
+        c.drawString(100, 350, text)
+
+        # Если текст не умещается на одной странице, создаем вторую страницу и записываем текст там
+        text_width = c.stringWidth(text, "Helvetica", 20)
+        if text_width >= A4[0] - 200:
+            c.showPage()
+            c.setFont("Helvetica", 20)
+            c.setFillColor(colors.black)
+            c.drawString(100, A4[1] - 100, text)
+
+        # Добавляем текст, введенный пользователем
+        if self.user_text:
+            c.setFont("Helvetica", 14)
+            c.setFillColor(colors.blue)
+            x, y = 200, 200
+            lines = self.user_text.split('\n')
+            for line in lines:
+                line_width = c.stringWidth(line, "Helvetica", 14)
+                if y < 100 or y - 14 < A4[1] - 750:  # Проверка для автоматического перехода на новую страницу
+                    c.showPage()
+                    y = A4[1] - 100
+                c.drawString(x, y, line)
+                y -= 20
+
+        c.save()
+        print(f"PDF-файл '{output_file}' успешно создан.")
+
+        # Отображаем созданный PDF-файл
+        if self.pdf_file.load_pdf(output_file):
+            self.show_pdf()
+
+    def add_user_text(self):
+        self.user_text += self.entry_user_text.get() + "\n"  # Добавляем перенос строки после ввода
+        self.create_new_pdf()
+
+    def close_pdf(self):
+        self.pdf_file.close_pdf()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.state('zoomed')  # Увеличиваем окно на весь экран
+    app = PDFViewerApp(root)
+    root.mainloop()
